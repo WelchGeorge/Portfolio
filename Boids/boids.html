@@ -1,0 +1,360 @@
+<html>
+    <canvas id="gameCanvas" width="1080" height="1080"></canvas> <br>
+    <input id="align" type="checkbox" onclick="alignCheck()">alignment</input>
+    <input id="cohesion" type="checkbox" onclick="cohesionCheck()">cohesion</input>
+    <input id="seperate" type="checkbox" onclick="seperationCheck()">seperation</input>
+    <input id="control" type="checkbox" onclick="controlCheck()">control</input>
+    <p>
+        Boids: <br>
+        Boids are a basic emergent behaviour simulation where each boid follows 3 simple rules:<br>
+        separation: steer to avoid crowding local flockmates<br>
+        alignment: steer towards the average heading of local flockmates<br>
+        cohesion: steer to move towards the average position (center of mass) of local flockmates<br>
+        Click to create 30 Boids up to a maximum of 600.<br>
+        1 in 10 boids will be attracted to the mouse cursor when within its radius when cursor is inside canvas.<br>
+        the color of each boid represents the number of boids it is interacting with.
+    </p>
+    <script>
+
+        /*Boids operate on 3 rules:
+        separation: steer to avoid crowding local flockmates
+        alignment: steer towards the average heading of local flockmates
+        cohesion: steer to move towards the average position (center of mass) of local flockmates*/
+
+        var canvas;
+        var ctx;
+        var boidIndex = 0;
+
+        var mousePos;
+
+        var angle = 0;
+
+        const BOID_NUMBER = 600;
+        const VISION_RADIUS = 90;
+        const MOVE_SPEED = 3;
+        const STEER_SPEED = 1;
+        const SEPERATION = 25;
+        const MAX_SPEED = 6;
+
+        var ALIGN_STRENGTH = 0;
+        var COHESION_STRENGTH = 0;
+        var SEPERATION_STRENGTH = 0;
+        function alignCheck() {
+            var checkBox = document.getElementById("align");
+            if (checkBox.checked == true) {
+                ALIGN_STRENGTH = 0.05;
+            } else {
+                ALIGN_STRENGTH = 0;
+            }
+        }
+        function cohesionCheck() {
+            var checkBox = document.getElementById("cohesion");
+            if (checkBox.checked == true) {
+                COHESION_STRENGTH = 0.01;
+            } else {
+                COHESION_STRENGTH = 0;
+            }
+        }
+        function seperationCheck() {
+            var checkBox = document.getElementById("seperate");
+            if (checkBox.checked == true) {
+                SEPERATION_STRENGTH = 0.01;
+            } else {
+                SEPERATION_STRENGTH = 0;
+            }
+        }
+
+       var CONTROL = false;
+        function controlCheck() {
+            var checkBox = document.getElementById("control");
+            if (checkBox.checked == true) {
+                CONTROL =true;
+            } else {
+                CONTROL = false;
+            }
+        }
+        
+        const CHASE_STRENGTH = 0.002;
+        const OBJECT_AVOID = 0.1;
+
+        
+
+        var boids = [];
+        var boid1 = new Boid(0, 100, 200, 175);
+        var boid2 = new Boid(1, 400, 200, 90);
+        var boid3 = new Boid(2, 300, 500, 0);
+        var boidXPositions = new Array(BOID_NUMBER);
+        var boidYPositions = new Array(BOID_NUMBER);
+        var boidVelocities = new Array(BOID_NUMBER);
+
+        function calculateMousePos(evt) {
+            var rect = canvas.getBoundingClientRect();
+            var root = document.documentElement;
+            var mouseX = evt.clientX - rect.left - root.scrollLeft;
+            var mouseY = evt.clientY - rect.top - root.scrollTop;
+            return {
+                x: mouseX,
+                y: mouseY
+            };
+        }
+
+        createBoid = function(id, x, y) {
+            boids[id] = new Boid(id, x, y, 360 * Math.random());
+        }
+
+        calculateMagnitude = function(a, b) {
+            return Math.sqrt(Math.pow(a, 2) + Math.pow(b, 2));
+        }
+
+        addVectors = function(a, b) {
+            
+            let output = [(a[0] + b[0]), (a[1] + b[1])];
+            return output;
+        }
+
+        scalarProduct = function(scalar, vector) {
+            return [scalar * vector[0], scalar * vector[1]];
+        }
+
+        //draw a boid with tip at x,y. Angle from North anti-clockwise in degrees +/- 180.
+        drawBoid = function(x, y, angle, color) {
+            var rads = -1 * (angle + 90) * Math.PI / 180;
+            
+            
+            ctx.fillStyle = color;
+            
+            var boid = new Path2D();
+            boid.moveTo(x, y);
+            boid.lineTo(x + (10 * Math.sin(rads + 0.3)), y + (10 * Math.cos(rads + 0.3)));
+            boid.lineTo (x + (10 * Math.sin(rads - 0.3)), y + (10*Math.cos(rads - 0.3)));
+            ctx.fill(boid);
+        }
+
+        //boid properties
+        function Boid(id, x, y, dir) {
+            this.control = false;
+            
+            this.leader = Math.random();
+            this.id = id;
+            this.posX = x;
+            this.posY = y;
+            this.velocity = [(MOVE_SPEED * (Math.cos(dir * Math.PI / 180))), (MOVE_SPEED * (Math.sin(dir * Math.PI / 180)))];
+            
+
+            this.updateDirection = function() {
+                if (this.velocity[0] > 0 && this.velocity[1] >= 0) {
+                this.direction = ((Math.atan(this.velocity[1] / this.velocity[0])) * 180 / Math.PI);
+            } else if (this.velocity[0] == 0) {
+                if (this.velocity[1] > 0) {                        
+                    this.direction = -90;
+                } else {
+                     this.direction = 90;
+                }
+            } else if (this.velocity[0] < 0 ) {
+                this.direction = 180 + ((Math.atan(this.velocity[1] / this.velocity[0])) * 180 / Math.PI);
+            } else if (this.velocity[0] > 0 && this.velocity[1] < 0) {
+                this.direction = 360 + ((Math.atan(this.velocity[1] / this.velocity[0])) * 180 / Math.PI);
+            }
+            }
+            
+            
+            this.flockX = x;
+            this.flockY = y;
+            this.flockDirection = dir;
+            this.radius = VISION_RADIUS;
+            this.move = function() {
+                
+                if (this.posX < 0) {
+                    this.posX = canvas.width;
+                } else if (this.posX > canvas.width) {
+                    this.posX = 0;
+                }
+                if (this.posY < 0) {
+                    this.posY = canvas.height;
+                } else if (this.posY > canvas.height) {
+                    this.posY = 0;
+                }
+                this.posX += this.velocity[0];
+                this.posY += this.velocity[1];
+                this.updateDirection();
+                boidXPositions[this.id] = this.posX;
+                boidYPositions[this.id] = this.posY;
+                
+            };
+            this.flock = function() {
+                var total = 1;
+                var meanXVelocity = 0;
+                var meanYVelocity = 0;
+                var meanX = this.posX;
+                var meanY = this.posY;
+                var nearX = 0;
+                var nearY = 0;
+                this.seperateVector = [0,0];
+                for (let i = 0; i < boidXPositions.length; i++) {
+                    if (i != this.id && boidXPositions[i] != null) {
+                        if ((Math.pow((this.posX - boidXPositions[i]), 2) + Math.pow((this.posY - boidYPositions[i]), 2)) <= Math.pow(this.radius, 2)) {
+                            
+
+                            total++;
+                            meanXVelocity += boidVelocities[i][0];
+                            meanYVelocity += boidVelocities[i][1];
+                            meanX += boidXPositions[i];
+                            meanY += boidYPositions[i];
+
+                            //seperate boids
+                            if (calculateMagnitude((boidXPositions[i] - this.posX), (boidYPositions[i] - this.posY)) < SEPERATION) {
+                                
+                                this.seperateVector = [this.seperateVector[0] - (this.posX - boidXPositions[i]), this.seperateVector[1] - (this.posY - boidYPositions[i])];
+                                
+                            }
+                            //avoid top pole
+                            if (calculateMagnitude(((canvas.width / 3) - this.posX), ((canvas.height / 3) - this.posY)) < 10 + SEPERATION) {
+                                
+                                this.seperateVector = [this.seperateVector[0] - OBJECT_AVOID * (this.posX - (canvas.width / 3)), this.seperateVector[1] - OBJECT_AVOID * (this.posY - (canvas.height / 3))];
+                                
+                            }
+                            //avoid bottom pole
+                            if (calculateMagnitude(((2 * canvas.width / 3) - this.posX), ((2 * canvas.height / 3) - this.posY)) < 10 + SEPERATION) {
+                                
+                                this.seperateVector = [this.seperateVector[0] - OBJECT_AVOID * (this.posX - (2 * canvas.width / 3)), this.seperateVector[1] - OBJECT_AVOID * (this.posY - (2 * canvas.height / 3))];
+                                
+                            }
+                            
+                        }
+                    }
+                }
+
+               if (total <= 360) {
+                    this.colorIndex = Math.round(0.75 * total);
+               } else {
+                   this.colorIndex = 270;
+               }
+               if (this.control) {
+                   this.highlight = "75%";
+               } else {
+                   this.highlight = "50%";
+               }
+               this.color = "hsl(" + this.colorIndex + ", 100%," + this.highlight + ")";
+                
+                this.nearVector = [(this.nearX - this.posX), (this.nearY - this.posY)];
+                this.flockX = meanX / total;
+                
+                this.flockY = meanY / total;
+                this.flockVector = [(this.flockX - this.posX), (this.flockY - this.posY)];
+                this.flockVelocity = [0 + (meanXVelocity / total), 0 + (meanYVelocity / total)];
+            }
+            this.steer = function() {
+                this.flock();
+
+                //alignment
+                this.velocity = addVectors(this.velocity, scalarProduct(ALIGN_STRENGTH, this.flockVelocity));
+                
+                //cohesion 
+                this.velocity = addVectors(this.velocity, scalarProduct(COHESION_STRENGTH, this.flockVector));
+                
+                //seperation
+                this.velocity = addVectors(this.velocity, scalarProduct(-1* SEPERATION_STRENGTH, this.seperateVector)); 
+                
+                //avoid walls
+                if (this.posX < VISION_RADIUS) {
+                    this.velocity[0] += SEPERATION_STRENGTH * this.posX;
+                } else if (this.posX > canvas.width - VISION_RADIUS) {
+                    this.velocity[0] -= SEPERATION_STRENGTH * (canvas.width - this.posX); 
+                } 
+                if (this.posY < VISION_RADIUS) {
+                    this.velocity[1] += SEPERATION_STRENGTH * this.posY;
+                } else if (this.posY > canvas.height - VISION_RADIUS) {
+                    this.velocity[1] -= SEPERATION_STRENGTH * (canvas.height - this.posY); 
+                }
+                
+                //flock to mouse
+                if (this.leader < 0.1 && CONTROL) {
+                    this.mouseDistance = calculateMagnitude((mousePos.x - this.posX), (mousePos.y - this.posY));
+                this.mouseVector = [(mousePos.x - this.posX), (mousePos.y - this.posY)];
+                
+                if (this.mouseDistance < 5 * VISION_RADIUS && mousePos.x < canvas.width - VISION_RADIUS) {
+                    this.control = true;
+                    this.velocity = addVectors(this.velocity, scalarProduct(CHASE_STRENGTH, this.mouseVector));
+                } else {
+                    this.control = false;
+                }
+                }
+                
+                
+                
+                //limit speed
+                if (calculateMagnitude(this.velocity[0], this.velocity[1]) > MAX_SPEED) {
+                    this.velocity[0] = (this.velocity[0] / calculateMagnitude(this.velocity[0], this.velocity[1]))  * MAX_SPEED;
+                    this.velocity[1] = (this.velocity[1] / calculateMagnitude(this.velocity[0], this.velocity[1]))  * MAX_SPEED;
+                }
+                
+                boidVelocities[this.id] = this.velocity;
+                this.move();
+            }
+        };
+
+        moveEverything = function() {
+            
+            boids.forEach(boid => {
+                boid.steer();
+            });
+            
+        }
+
+        drawEverything = function() {
+            ctx.fillStyle = "black";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (mousePos.x < canvas.width - VISION_RADIUS && CONTROL) {
+                ctx.fillStyle = "hsla(0, 50%, 70%, 0.1";
+            ctx.beginPath();
+            ctx.arc(mousePos.x, mousePos.y, 5 * VISION_RADIUS, 0, Math.PI * 2, true);
+            ctx.fill();
+            }
+            
+            ctx.fillStyle = "orange";
+            ctx.beginPath();
+            ctx.arc(canvas.width / 3, canvas.width / 3, 10, 0, Math.PI * 2, true);
+            ctx.fill(); 
+            ctx.fillStyle = "orange";
+            ctx.beginPath();
+            ctx.arc(2 * canvas.width / 3, 2 * canvas.width / 3, 10, 0, Math.PI * 2, true);
+            ctx.fill();
+            
+            boids.forEach(boid => {
+                drawBoid(boid.posX, boid.posY, boid.direction, boid.color);
+            });
+
+            ctx.fillStyle = "white";
+            ctx.fillText(boidIndex + " Boids", 10, 15);
+            
+            
+        }
+        handleMouseClick = function(evt) {
+            for (let count = 0; count < 30; count++) {
+                if (boidIndex < BOID_NUMBER) {
+                    createBoid(boidIndex, mousePos.x, mousePos.y);
+                    boidIndex++;
+                }
+            }
+            
+        }
+
+        window.onload = function() {
+            canvas = document.getElementById("gameCanvas");
+            ctx = canvas.getContext("2d");
+
+            canvas.addEventListener("mousedown", handleMouseClick);
+
+            canvas.addEventListener("mousemove", function(event) {
+                mousePos = calculateMousePos(event);
+            })
+            
+            var framesPerSecond = 30;
+            setInterval(function() {
+                moveEverything();
+                drawEverything();
+            }, 1000 / framesPerSecond);
+        }
+        
+    </script>
+</html>
