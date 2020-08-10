@@ -99,6 +99,14 @@ async function train(model, data) {
         ];
     });
 
+    const [testXs, testYs] = tf.tidy(() => {
+        const d = data.nextTestBatch(TEST_DATA_SIZE);
+        return [
+          d.xs.reshape([TEST_DATA_SIZE, 28, 28, 1]),
+          d.labels
+        ];
+      });
+
     return model.fit(trainXs, trainYs, {
         batchSize: BATCH_SIZE,
         validationData: [testXs, testYs],
