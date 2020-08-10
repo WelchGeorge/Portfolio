@@ -28,16 +28,7 @@ async function showExamples(data) {
     }
 }
 
-async function run() {
-    const data = new MnistData();
-    await data.load();
-    await showExamples(data);
-    const model = getModel();
-    tfvis.show.modelSummary({name: "Model Architecture"}, model);
-    await train(model, data);
-}
 
-document.addEventListener("DOMContentLoaded", run);
 
 function getModel() {
     const model = tf.sequential();
@@ -116,3 +107,16 @@ async function train(model, data) {
         callbacks: fitCallbacks
     });
 }
+
+async function run() {
+    const data = new MnistData();
+    await data.load();
+    const model = getModel();
+    tfvis.show.modelSummary({name: "Model Architecture"}, model);
+    
+    await showExamples(data);
+    
+    await train(model, data);
+}
+
+document.addEventListener("DOMContentLoaded", run);
