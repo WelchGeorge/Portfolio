@@ -32,6 +32,9 @@ async function run() {
     const data = new MnistData();
     await data.load();
     await showExamples(data);
+    const model = getModel();
+    tfvis.show.modelSummary({name: "Model Architecture"}, model);
+    await train(model, data);
 }
 
 document.addEventListener("DOMContentLoaded", run);
@@ -84,4 +87,32 @@ function getModel() {
       });
 
       return model;
+}
+
+async function train(model, data) {
+    const metrics = ["loss", "val_loss", "acc", "val_acc"];
+    const container = {
+        name: "Model Training", styles: { height: "1000px"}
+    };
+    const fitCallbacks = tfvis.show.fitCallbacks(container, metrics);
+
+    const BATCH_SIZE = 512;
+    const TRAIN_DATA_SIZE = 5500;
+    const TEST_DATA_SIZE = 1000;
+
+    const [trainXs, trainYs] = tf.tidy(() => {
+        const d = data.nextTestBatch(TEST_DATA_SIZE);
+        return [
+            d.xs.reshape([TEST_DATA_SIZE, 28, 28, 1]),
+            d.labels
+        ];
+    });
+
+    return model.fit(trainXs, trainYs, {
+        batchSize: BATCH_SIZE,
+        validationData: [testXs, testYs],
+        epochs: 10,
+        shuffle: true,
+        callbacks: fitCallbacks
+    });
 }
